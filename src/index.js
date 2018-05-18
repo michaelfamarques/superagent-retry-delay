@@ -21,7 +21,7 @@ module.exports = function (superagent) {
  * @param {Error} err
  * @param {Response} res
  */
-function shouldRetry(err, res, allowedStatuses) {
+function shouldRetry(err, res, allowedStatuses, disallowedStatuses) {
     const ERROR_CODES = [
         'ECONNRESET',
         'ETIMEDOUT',
@@ -37,7 +37,11 @@ function shouldRetry(err, res, allowedStatuses) {
     if (res && res.status) {
         const status = res.status
 
-        if (status >= 500 && allowedStatuses.indexOf(status) === -1) {
+        if(disallowedStatuses.indexOf(status) > -1){
+            return false;
+        }
+
+        if (status >= 500) {
             return true
         }
 
@@ -70,7 +74,7 @@ function shouldRetry(err, res, allowedStatuses) {
  */
 
 function callback(err, res) {
-    if (this._maxRetries && this._retries++ < this._maxRetries && shouldRetry(err, res, this._allowedStatuses)) {
+    if (this._maxRetries && this._retries++ < this._maxRetries && shouldRetry(err, res, this._allowedStatuses, this.disallowedStatuses)) {
         var req = this
         return setTimeout(function () {
             return req._retry()
@@ -125,7 +129,7 @@ function callback(err, res) {
  * @param {Number[]} allowedStatuses
  * @return {retry}
  */
-function retry(retries, delay, allowedStatuses) {
+function retry(retries, delay, allowedStatuses, disallowedStatuses) {
     if (arguments.length === 0 || retries === true) {
         retries = 1
     }
@@ -138,6 +142,7 @@ function retry(retries, delay, allowedStatuses) {
     this._retries = 0
     this._retryDelay = delay || 0
     this._allowedStatuses = allowedStatuses || []
+    this._disallowedStatuses = disallowedStatuses || []
 
     return this
 }
