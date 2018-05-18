@@ -1,15 +1,16 @@
+const http = require('http');
 /**
  * Add to the request prototype.
  */
 
 module.exports = function (superagent) {
-  const Request = superagent.Request
+    const Request = superagent.Request
 
-  Request.prototype.oldRetry = Request.prototype.retry
-  Request.prototype.retry = retry
-  Request.prototype.callback = callback
+    Request.prototype.oldRetry = Request.prototype.retry
+    Request.prototype.retry = retry
+    Request.prototype.callback = callback
 
-  return superagent
+    return superagent
 }
 
 /**
@@ -20,41 +21,41 @@ module.exports = function (superagent) {
  * @param {Error} err
  * @param {Response} res
  */
-function shouldRetry (err, res, allowedStatuses) {
-  const ERROR_CODES = [
-    'ECONNRESET',
-    'ETIMEDOUT',
-    'EADDRINFO',
-    'ESOCKETTIMEDOUT',
-    'ENOTFOUND'
-  ]
+function shouldRetry(err, res, allowedStatuses) {
+    const ERROR_CODES = [
+        'ECONNRESET',
+        'ETIMEDOUT',
+        'EADDRINFO',
+        'ESOCKETTIMEDOUT',
+        'ENOTFOUND'
+    ]
 
-  if (err && err.code && ~ERROR_CODES.indexOf(err.code)) {
-    return true
-  }
-
-  if (res && res.status) {
-    const status = res.status
-
-    if (status >= 500) {
-      return true
+    if (err && err.code && ~ERROR_CODES.indexOf(err.code)) {
+        return true
     }
 
-    if ((status >= 400 || status < 200) && allowedStatuses.indexOf(status) === -1) {
-      return true
+    if (res && res.status) {
+        const status = res.status
+
+        if (status >= 500 && allowedStatuses.indexOf(status) === -1) {
+            return true
+        }
+
+        if ((status >= 400 || status < 200) && allowedStatuses.indexOf(status) === -1) {
+            return true
+        }
     }
-  }
 
-  // Superagent timeout
-  if (err && 'timeout' in err && err.code === 'ECONNABORTED') {
-    return true
-  }
+    // Superagent timeout
+    if (err && 'timeout' in err && err.code === 'ECONNABORTED') {
+        return true
+    }
 
-  if (err && 'crossDomain' in err) {
-    return true
-  }
+    if (err && 'crossDomain' in err) {
+        return true
+    }
 
-  return false
+    return false
 }
 
 /**
@@ -67,24 +68,52 @@ function shouldRetry (err, res, allowedStatuses) {
  * @param res
  * @return {Object}
  */
-function callback (err, res) {
-  if (this._maxRetries && this._retries++ < this._maxRetries && shouldRetry(err, res, this._allowedStatuses)) {
-    var req = this
-    return setTimeout(function () {
-      return req._retry()
-    }, this._retryDelay)
-  }
 
-  var fn = this._callback
-  this.clearTimeout()
+function callback(err, res) {
+    if (this._maxRetries && this._retries++ < this._maxRetries && shouldRetry(err, res, this._allowedStatuses)) {
+        var req = this
+        return setTimeout(function () {
+            return req._retry()
+        }, this._retryDelay)
+    }
 
-  if (err) {
-    if (this._maxRetries) err.retries = this._retries - 1
-    this.emit('error', err)
-  }
+    // Avoid the error which is emitted from 'socket hang up' to cause the fn undefined error on JS runtime.
+    const fn = this._callback || noop;
+    this.clearTimeout();
+    if (this.called) return console.warn('superagent: double callback bug');
+    this.called = true;
 
-  fn(err, res)
-}
+    if (!err) {
+        try {
+            if (!this._isResponseOK(res)) {
+                let msg = 'Unsuccessful HTTP response';
+                if (res) {
+                    msg = http.STATUS_CODES[res.status] || msg;
+                }
+                err = new Error(msg);
+                err.status = res ? res.status : undefined;
+            }
+        } catch (new_err) {
+            err = new_err;
+        }
+    }
+    // It's important that the callback is called outside try/catch
+    // to avoid double callback
+    if (!err) {
+        return fn(null, res);
+    }
+
+    err.response = res;
+    if (this._maxRetries) err.retries = this._retries - 1;
+
+    // only emit error event if there is a listener
+    // otherwise we assume the callback to `.end()` will get the error
+    if (err && this.listeners('error').length > 0) {
+        this.emit('error', err);
+    }
+
+    fn(err, res);
+};
 
 /**
  * Override Request retry to also set a delay.
@@ -96,19 +125,19 @@ function callback (err, res) {
  * @param {Number[]} allowedStatuses
  * @return {retry}
  */
-function retry (retries, delay, allowedStatuses) {
-  if (arguments.length === 0 || retries === true) {
-    retries = 1
-  }
+function retry(retries, delay, allowedStatuses) {
+    if (arguments.length === 0 || retries === true) {
+        retries = 1
+    }
 
-  if (retries <= 0) {
-    retries = 0
-  }
+    if (retries <= 0) {
+        retries = 0
+    }
 
-  this._maxRetries = retries
-  this._retries = 0
-  this._retryDelay = delay || 0
-  this._allowedStatuses = allowedStatuses || []
+    this._maxRetries = retries
+    this._retries = 0
+    this._retryDelay = delay || 0
+    this._allowedStatuses = allowedStatuses || []
 
-  return this
+    return this
 }
