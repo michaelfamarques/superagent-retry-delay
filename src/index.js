@@ -74,7 +74,7 @@ function shouldRetry(err, res, allowedStatuses, disallowedStatuses) {
  */
 
 function callback(err, res) {
-    if (this._maxRetries && this._retries++ < this._maxRetries && shouldRetry(err, res, this._allowedStatuses, this.disallowedStatuses)) {
+    if (this._maxRetries && this._retries++ < this._maxRetries && shouldRetry(err, res, this._allowedStatuses, this._disallowedStatuses)) {
         var req = this
         return setTimeout(function () {
             return req._retry()
